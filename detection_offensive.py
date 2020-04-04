@@ -13,6 +13,9 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score 
 from sklearn.metrics import classification_report 
+from keras.wrappers.scikit_learn import KerasClassifier
+from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import KFold
 
 
 def sample_file_percentage(pathin, directory, percentage):
@@ -32,7 +35,7 @@ def sample_file_percentage(pathin, directory, percentage):
 
 def set_up_model(vocab_size, input_length):
     model = Sequential()
-    model.add(layers.Embedding(vocab_size,embedding_length , input_length=input_length, trainable=True))
+    model.add(layers.Embedding(vocab_size,embedding_length , input_length=input_length, trainable=False))
     model.add(layers.Conv1D(filter_n, filter_heigth, strides=strides, padding='valid', activation='relu'))
     model.add(layers.GlobalMaxPool1D())
     model.add(layers.Dropout(0.5))
@@ -61,14 +64,38 @@ def calculate_confusion_matrix(correct_labels, prediction_labels, correct1hot=Tr
         correct_labels = np.argmax(correct_labels, axis=1)
     if(prediction1hot):
         prediction_labels = np.argmax(prediction_labels, axis=1)
-            #Predicted0#Predicted1#
-    #Actual0|          |
-    #Actual1|          |
+            #Predicted0|Predicted1|Predict3|
+    #Actual0|          |          |        |
+    #Actual1|          |          |        |
+    #Actual2|          |          |        |
     c_matrix = confusion_matrix(correct_labels, prediction_labels, labels=names)
     print(c_matrix)
     print("Accuracy score: ", accuracy_score(correct_labels, prediction_labels))
     print("Report")
     print(classification_report(correct_labels, prediction_labels))
+
+
+def word2vec_embedding():
+    pass
+
+def run_kfold(splits, data, labels):
+    
+    kf = KFold(n_splits=splits, shuffle=True)
+    encoder = LabelEncoder()
+    labels_int = encoder.fit(labels).transform(labels)
+    print(encoder.classes_)
+    label_names = encoder.classes_
+    #1hot encode the labels - [1,0,0] : 0; [0,1,0]: 1; [0,0,1]: 2
+    labels_encoded = utils.to_categorical(labels_int)
+    history = list()
+    for train_index, test_index in kf.split(data):
+        #data is splitted based on the 
+        data_train , data_test = data[train_index], data[test_index]
+        label_train , label_test = labels_encoded[train_index], labels_encoded[test_index]
+        
+        #resetting the model every iteration
+        history.append(run_model(data_train, data_test, label_train, label_test))
+    return history
 
 
 def plot_history(training):
@@ -119,24 +146,7 @@ batch_size = 32
 epochs = 10
 #
 
-def main():
-    df = pd.read_csv(file_path, names=["id", "text", "label"], sep=",");
-
-    data = df["text"].values
-    labels = df["label"].values
-
-    
-    print("total labels")
-    labels_n, __ = print_info_labels(labels)
-
-    encoder = LabelEncoder()
-    labels_int = encoder.fit(labels).transform(labels)
-    print(encoder.classes_)
-    label_names = encoder.classes_
-    #1hot encode the labels - [1,0,0] : 0; [0,1,0]: 1; [0,0,1]: 2
-    labels_encoded = utils.to_categorical(labels_int)
-    data_train, data_test, label_train, label_test = train_test_split(data, labels_encoded, test_size=0.20)
-
+def run_model(data_train, data_test, label_train, label_test):
     print("Training labels")
     print_info_labels(label_train,0)
     print("Testing labels")
@@ -176,18 +186,36 @@ def main():
     predictions = model.predict_classes(data_test_seq, batch_size)
     print("predictions:", pd.unique(predictions))
     calculate_confusion_matrix(label_test, predictions)
+    return training
 
-    # p_token = tokenizer.texts_to_sequences(p_example)
-    # p_padded = sequence.pad_sequences(p_token, maxlen=max_len)
-    # predicted_prob = model.predict(p_padded)
-    # predicted_class = model.predict_classes(p_padded)
+def run_single_model(data, labels):
+    #model = set_up_model()
+    encoder = LabelEncoder()
+    labels_int = encoder.fit(labels).transform(labels)
+    print(encoder.classes_)
+    label_names = encoder.classes_
+    #1hot encode the labels - [1,0,0] : 0; [0,1,0]: 1; [0,0,1]: 2
+    labels_encoded = utils.to_categorical(labels_int)
+    data_train, data_test, label_train, label_test = train_test_split(data, labels_encoded, test_size=0.20)
+    return run_model(data_train, data_test, label_train, label_test)
 
 
+def main():
+    df = pd.read_csv(file_path, names=["id", "text", "label"], sep=",");
 
+    data = df["text"].values
+    labels = df["label"].values
+
+    print("total labels")
+    labels_n, __ = print_info_labels(labels)
+
+    #training = run_single_model(data, labels)
+    history = run_kfold(2, data, labels)
     
+
     plt.style.use('ggplot')
-    training.history
-    #plot_history(training)
+    for training in history:
+        plot_history(training)
 
 
 
@@ -201,8 +229,7 @@ def main():
 def clean_dict():
     pass
 
-def word2vec_embedding():
-    pass
+
 
 def word2vec_pretrained_embedding():
     pass
