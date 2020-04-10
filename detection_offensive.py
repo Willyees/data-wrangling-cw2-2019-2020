@@ -23,7 +23,11 @@ from gensim.models import Word2Vec
 from gensim.utils import simple_preprocess
 from gensim.models.keyedvectors import KeyedVectors
 from keras_preprocessing.text import text_to_word_sequence
-
+import string
+from bs4 import BeautifulSoup
+from nltk.corpus import stopwords
+import re
+#from spellchecker import SpellChecker
 
 def sample_file_percentage(pathin, directory, percentage):
     """ Description:
@@ -40,7 +44,7 @@ def sample_file_percentage(pathin, directory, percentage):
     sampled.to_csv(directory + "sampled" + str(percentage) + ".csv", index=False, index_label=False)
 
 
-def set_up_model(vocab_size, input_length, embedding=np.empty(1)):
+def set_up_model(vocab_size, input_length, embedding=np.zeros((1,0))):
     """embedding optional"""
     model = Sequential()
     if(embedding.size):
@@ -169,14 +173,15 @@ strides = 1
 batch_size = 32
 epochs = 10
 #
-path_model_wc = 'E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\models\\init_50.wv' #model to be used to load a pretrained wc
+#path_model_wc = 'E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\models\\init_50.wv' #model to be used to load a pretrained wc
 #path_model_wc = 'C:\\Users\\Alessio\\gensim-data\\glove-twitter-25\\glove-twitter-25.gz'
+path_model_wc = 'C:\\Users\\Alessio\\gensim-data\\glove-wiki-gigaword-50\\glove-wiki-gigaword-50.gz'
 
 def word2vec_embedding(vocab_size, word_index, pre_embedding=False, data_embedding=np.zeros((1,0))):
     """data_embedding: optional, only needed if pre_embedding is not used. pre_embedding states that a preembedding generated model will be loaded from 
     global variable path_model_wc (bad practice fix). data_embedding used to pass the data to train the word embedding"""
     #load pretrained model
-    print("Fitting the prembedding matrix")
+    print("Fitting the embedding matrix")
     word_vectors : KeyedVectors
     if not pre_embedding:
         print("Calculating the words vector from datasetfile")
@@ -185,6 +190,7 @@ def word2vec_embedding(vocab_size, word_index, pre_embedding=False, data_embeddi
             raise AttributeError("data embedding parameter should not be empty if pre_embedding is set to False")
         word_vectors = get_word2vec_embedding(data_embedding)
     else:
+        print("Loading preembedded word vector from {}".format(path_model_wc))
         word_vectors = KeyedVectors.load_word2vec_format(path_model_wc, binary=False)
     embedding_matrix = np.zeros((vocab_size, embedding_length))
 
@@ -227,7 +233,7 @@ def run_model(data_train, data_test, label_train, label_test, word2vec=True, pre
     print(len(data_train_seq[0]))
     print(len(data_train_seq))
     #set it to none. Only being loaded if the runmodel has passed True embedding
-    embedding_matrix = np.empty(1)
+    embedding_matrix = np.zeros((1,0))
     #check if user prefers that embedded model is loaded with a calculated matrix weights
     if(word2vec):
         embedding_matrix = word2vec_embedding(vocab_size, tokenizer.word_index, pre_embedding, np.concatenate((data_train,data_test)))
@@ -263,28 +269,6 @@ def run_single_model(data, labels, word2vec=True, pre_embedding=False):
     return run_model(data_train, data_test, label_train, label_test, word2vec=word2vec, pre_embedding=pre_embedding)
 
 
-def main():
-    file_path = path_full
-    df = pd.read_csv(file_path, names=["id", "text", "label"], sep=",");
-
-    data = df["text"].fillna("NAN_sentence").values
-    labels = df["label"].values
-
-    print("total labels")
-    labels_n, __ = print_info_labels(labels)
-    #set the embedding, otherwise is None - so wv are created randomly
-    
-    training, accuracies_training , accuracies_testing = run_single_model(data, labels, word2vec=True, pre_embedding=False)
-    #history, accuracies_training, accuracies_testing  = run_kfold(5, data, labels)
-    
-    print("Training")
-    print(accuracies_training)
-    print("Testing")
-    print(accuracies_testing)
-
-    plt.style.use('ggplot')
-    # for training in history:
-    #     plot_history(training)
 
 
 
@@ -327,11 +311,7 @@ def get_max_length_sentences(file_path, n_elements):
     #     print('-*10')
 
     return s[0:n_elements]
-    
 
-def clean_sentences(df):
-    dups = data.duplicates()
-    pass
 
 def get_word2vec_embedding(data):
     sentences_words = list(text_to_word_sequence(x) for x in data)
@@ -340,10 +320,67 @@ def get_word2vec_embedding(data):
     print("Number of word vectors: {}".format(len(model.wv.vocab)))
     return model.wv
 
+def write_df_to_file(df, pathout):
+    print("writing df to {}".format(pathout))
+    df.to_csv(pathout, header=False, index=False)
+
+def clean_dict(df : DataFrame, column):
+    print("Preprocessing data text - cleanining")
+    d = df.duplicated(column, keep='first')
+    print("removing duplicate words. Duplicates = {} words".format(len(df[d][column])))
+    #drop duplicates
+    print("len before removing: {}".format(len(df[column])))
+    df.drop_duplicates(subset=column, inplace=True, keep='first')
+    print("len after removing: {}".format(len(df[column])))
+    stop = stopwords.words('english')
+    for i, row in df.iterrows():
+        sentence = row[column]
+        #remove http url
+        sentence = re.sub(r'\w+:\/{2}[\d\w-]+(\.[\d\w-]+)*(?:(?:\/[^\s/]*))*', '', sentence)
+        #remove html
+        soup = BeautifulSoup(sentence, "html.parser")
+        sentence = soup.get_text()
+        
+        #remove punctuation
+        sentence = sentence.translate(str.maketrans('', '', string.punctuation))
+        
+        
+        #remove common stop words - might have to use it earlier because some stop words use symbols xes: isn't
+        sentence = " ".join(x for x in sentence.split() if x not in stop)
+        #stemming?lemming?
+        #spelling correction? textblob or pyspellchecker - problem: slang and not english words will be transformed in other words.
+
+        df.at[i, column] = sentence
+    print(df[column].head())
+    return df
+
+##end helper functions
+
+
+def main():
+    file_path = path_full#"E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\train_no_dup.csv"
+    df = pd.read_csv(file_path, names=["id", "text", "label"], sep=",")
+    df = clean_dict(df, "text")
+    data = df["text"].fillna("NAN_sentence").values
+    labels = df["label"].values
+    print("total labels")
+    labels_n, __ = print_info_labels(labels)
+    #set the embedding, otherwise is None - so wv are created randomly
+    
+    #training, accuracies_training , accuracies_testing = run_single_model(data, labels, word2vec=True, pre_embedding=False)
+    history, accuracies_training, accuracies_testing  = run_kfold(5, data, labels, word2vec=True, pre_embedding=False)
+    
+    print("Training")
+    print(accuracies_training)
+    print("Testing")
+    print(accuracies_testing)
+
+    #print hyperparameters used
+    print("max_len: {}, embedding_length : {}, filter_n : {}, filter_high : {}, strides : {}, batch_size : {}, epochs : {}".format(max_len, embedding_length, filter_n, filter_heigth, strides, batch_size, epochs))
+    plt.style.use('ggplot')
+    # for training in history:
+    #     plot_history(training)
+
+
 if __name__ == "__main__":
     main()
-
-
-def clean_dict(df : DataFrame):
-    #drop duplicates
-    df.drop_duplicates(inplace=True, keep='first')
