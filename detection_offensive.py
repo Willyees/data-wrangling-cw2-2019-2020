@@ -28,6 +28,8 @@ from bs4 import BeautifulSoup
 from nltk.corpus import stopwords
 import re
 #from spellchecker import SpellChecker
+from emot import EMOTICONS
+from emot import UNICODE_EMO
 
 def sample_file_percentage(pathin, directory, percentage):
     """ Description:
@@ -48,8 +50,10 @@ def set_up_model(vocab_size, input_length, embedding=np.zeros((1,0))):
     """embedding optional"""
     model = Sequential()
     if(embedding.size):
+        print("Embedding layer using weights calculated in embedding matrix ")
         model.add(layers.Embedding(vocab_size,embedding_length , input_length=input_length, weights=[embedding], trainable=False))
     else:
+        print("Embedding layer with random intiialized word vectors")
         model.add(layers.Embedding(vocab_size,embedding_length , input_length=input_length, trainable=False))
     model.add(layers.Conv1D(filter_n, filter_heigth, strides=strides, padding='valid', activation='relu'))
     model.add(layers.GlobalMaxPool1D())
@@ -153,6 +157,7 @@ path_full = "E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-par
 directory = "E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\"
 path_sampled = "E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\sampled.csv"
 path_sampled5 = "E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\sampled5.csv"
+path_full_no_emojis = ".\\datasets\\full_noemojis.csv"
 
 
 
@@ -324,10 +329,25 @@ def write_df_to_file(df, pathout):
     print("writing df to {}".format(pathout))
     df.to_csv(pathout, header=False, index=False)
 
+def convert_emoticons(text):
+    for emot in EMOTICONS:
+        text = re.sub(u'('+emot+')', " ".join(EMOTICONS[emot].replace(",","").split()), text)
+    return text
+
+def convert_emojis(text):
+    for emot in UNICODE_EMO:
+        text = text.replace(emot, " ".join(UNICODE_EMO[emot].replace(",","").replace(":","").split()) + " ")
+    return text
+
+def write_convert_df_to_text_emojis(df, column, pathout):
+    df[column] = df[column].apply(convert_emoticons)
+    df[column] = df[column].apply(convert_emojis)
+    write_df_to_file(df, pathout)
+
 def clean_dict(df : DataFrame, column):
     print("Preprocessing data text - cleanining")
     d = df.duplicated(column, keep='first')
-    print("removing duplicate words. Duplicates = {} words".format(len(df[d][column])))
+    print("removing duplicate sentences. Duplicates = {} senteces".format(len(df[d][column])))
     #drop duplicates
     print("len before removing: {}".format(len(df[column])))
     df.drop_duplicates(subset=column, inplace=True, keep='first')
@@ -337,16 +357,18 @@ def clean_dict(df : DataFrame, column):
         sentence = row[column]
         #remove http url
         sentence = re.sub(r'\w+:\/{2}[\d\w-]+(\.[\d\w-]+)*(?:(?:\/[^\s/]*))*', '', sentence)
+        #handle emojis before html
+        
         #remove html
         soup = BeautifulSoup(sentence, "html.parser")
         sentence = soup.get_text()
         
+        #remove common stop words - might have to use it earlier because some stop words use symbols xes: isn't
+        sentence = " ".join(x for x in sentence.split() if x not in stop)
         #remove punctuation
         sentence = sentence.translate(str.maketrans('', '', string.punctuation))
         
-        
-        #remove common stop words - might have to use it earlier because some stop words use symbols xes: isn't
-        sentence = " ".join(x for x in sentence.split() if x not in stop)
+
         #stemming?lemming?
         #spelling correction? textblob or pyspellchecker - problem: slang and not english words will be transformed in other words.
 
@@ -358,9 +380,9 @@ def clean_dict(df : DataFrame, column):
 
 
 def main():
-    file_path = path_full#"E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\train_no_dup.csv"
+    file_path = ".\\datasets\\full_noemojis_spacesbetween.csv"#"E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\train_no_dup.csv"
     df = pd.read_csv(file_path, names=["id", "text", "label"], sep=",")
-    df = clean_dict(df, "text")
+    #df = clean_dict(df, "text")
     data = df["text"].fillna("NAN_sentence").values
     labels = df["label"].values
     print("total labels")
@@ -368,7 +390,7 @@ def main():
     #set the embedding, otherwise is None - so wv are created randomly
     
     #training, accuracies_training , accuracies_testing = run_single_model(data, labels, word2vec=True, pre_embedding=False)
-    history, accuracies_training, accuracies_testing  = run_kfold(5, data, labels, word2vec=True, pre_embedding=False)
+    history, accuracies_training, accuracies_testing  = run_kfold(5, data, labels, word2vec=True, pre_embedding=True)
     
     print("Training")
     print(accuracies_training)
