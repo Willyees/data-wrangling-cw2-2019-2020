@@ -30,6 +30,9 @@ import re
 #from spellchecker import SpellChecker
 from emot import EMOTICONS
 from emot import UNICODE_EMO
+import nltk
+from nltk.stem.wordnet import WordNetLemmatizer
+from nltk.corpus.reader import wordnet
 
 def sample_file_percentage(pathin, directory, percentage):
     """ Description:
@@ -64,7 +67,7 @@ def set_up_model(vocab_size, input_length, embedding=np.zeros((1,0))):
     model.summary()
     return model
 
-def print_info_labels(labels, axis=None):
+def get_info_labels(labels, axis=None):
     classes, classes_c = np.unique(labels, return_counts=True, axis=axis)
     print("number of labels: " + str(len(classes)))
     print("labels available and occurrences: ")
@@ -201,8 +204,8 @@ def word2vec_embedding(vocab_size, word_index, pre_embedding=False, data_embeddi
 
     c_not_present = 0
     for word, position in word_index.items():
-        #check that vocab_size is 2000
-        if position >= vocab_size:
+        #vocab_size is the total number of the whole available words
+        if position >= vocab_size: #not too useful to use word_index for the vocab_size. Because will create a wc with all the available words, but when trained, the sequences created by the tokenizer will only output the n_more_common_words(n is set when creatign the tokenizer)
             continue
         try:
             embedding_word = word_vectors[word]
@@ -218,11 +221,22 @@ def word2vec_embedding(vocab_size, word_index, pre_embedding=False, data_embeddi
 def run_model(data_train, data_test, label_train, label_test, word2vec=True, pre_embedding=False):
     """Return: history: of training, evaluation_training: (accuracy, loss), evaluation_testing : (accuracy, loss). If embedding is set to true, prembedding words matrix is calculated """
     print("Training labels")
-    print_info_labels(label_train,0)
+    get_info_labels(label_train,0)
     print("Testing labels")
-    print_info_labels(label_test,0)
-    tokenizer = Tokenizer(num_words=2000)
+    get_info_labels(label_test,0)
+    tokenizer = Tokenizer(num_words=5000, lower=False, filters=[])
     tokenizer.fit_on_texts(data_train)
+    #debug
+    c = 0
+    for word,position in tokenizer.word_index.items():
+        #print(word + str(tokenizer.word_counts[word]))
+        
+        if(tokenizer.word_counts[word] == 1):
+            c+=1
+    print(c)
+    #end debug
+    pd.DataFrame()
+    
     x_train = tokenizer.texts_to_sequences(data_train)
     x_test = tokenizer.texts_to_sequences(data_test)
 
@@ -262,7 +276,7 @@ def run_model(data_train, data_test, label_train, label_test, word2vec=True, pre
     calculate_confusion_matrix(label_test, predictions)
     return training, (accuracy_train, loss_train), (accuracy_test, loss_test)
 
-def run_single_model(data, labels, word2vec=True, pre_embedding=False):
+def run_single_model(data, labels, word2vec=True, pre_embedding=False, downsample=False):
     #model = set_up_model()
     encoder = LabelEncoder()
     labels_int = encoder.fit(labels).transform(labels)
@@ -271,9 +285,55 @@ def run_single_model(data, labels, word2vec=True, pre_embedding=False):
     #1hot encode the labels - [1,0,0] : 0; [0,1,0]: 1; [0,0,1]: 2
     labels_encoded = utils.to_categorical(labels_int)
     data_train, data_test, label_train, label_test = train_test_split(data, labels_encoded, test_size=0.20)
+    if(downsample):
+        data_train, label_train = downsample_frequent_labels(data_train, label_train)
     return run_model(data_train, data_test, label_train, label_test, word2vec=word2vec, pre_embedding=pre_embedding)
 
 
+def get_list_index_labels(data_labels, labels_type):
+    """returns a list of lists. Each position will contain all the indexes of the same type of elements that are in the jumbled list data provided
+    labels_type is the unique type of labels in the data"""
+    sorted_by_type = [[] for x in range(len(labels_type) + 1)] #np.empty((len(labels_type) + 1,0))
+    for index, label in enumerate(data_labels):
+        for i, label_t in enumerate(labels_type):
+            if(np.array_equal(label,label_t)):
+                sorted_by_type[i].append(index)
+    return sorted_by_type
+
+def oversample_rare_labels(data, lables):
+    """function used to give more representation to more rare labels by duplicating instances of rare label classes"""
+
+
+
+def downsample_frequent_labels(data, labels):
+    """function used to give more representation to more rare labels by removing instances of frequent label classes"""
+    labels_c, labels_u = get_info_labels(labels, 0)#unique and count labels returned
+    min_index = np.argmin(labels_c)
+    min_n = labels_c[min_index]
+    l_indexes = get_list_index_labels(labels, labels_u)
+    l_chosen = []
+    #pick a number of random position to be removed from the l_indexes - not usign the chosen approach because it woudl create a list with ordered labels by type. Not good for the CNN
+    for index in range(len(labels_c)):
+        l_chosen.append(np.random.choice(l_indexes[index], replace=False, size=labels_c[index] - min_n))
+    #remove all the elements using reversed loop sorted
+    flattened = [item for sublist in l_chosen for item in sublist]
+    data = np.delete(data, flattened)
+    labels = np.delete(labels, flattened, axis=0)#kinda harcoded
+    return data, labels
+    
+    # output_data = data[ [item for sublist in l_chosen for item in sublist]] #have to flatten the l_chosen (shape 3,0)
+    # output_labels = labels[ [item for sublist in l_chosen for item in sublist]]
+    # down_sampled = np.chararray(())
+    # for index in range(len(labels_c)): #pick one item from each places
+    #     for i in range(labels_c[index] - min_n):#pop as many items as the number of minimum label class
+    #         random_position = np.random.randint(0, len(l_indexes[index])) #used to pick a random position in the l_indexes
+    #         #pop element from either labels and from the data array
+    #         data.pop(l_indexes[random_position])
+    #         labels.pop(l_indexes[random_position])
+    #         #have to pop also from the l_indexes to reflect changes in the main arrays
+    #         l_indexes.pop(random_position)
+    # get_info_labels(output_labels, 0)
+    # return output_data, output_labels
 
 
 
@@ -319,8 +379,8 @@ def get_max_length_sentences(file_path, n_elements):
 
 
 def get_word2vec_embedding(data):
-    sentences_words = list(text_to_word_sequence(x) for x in data)
-    model = Word2Vec(sentences_words, size=embedding_length, workers=4, min_count=1, sg=0, negative=5)
+    sentences_words = list(text_to_word_sequence(x, filters=[], lower=False) for x in data)
+    model = Word2Vec(sentences_words, size=embedding_length, workers=4, min_count=1, sg=1, hs=1, iter=5)
     
     print("Number of word vectors: {}".format(len(model.wv.vocab)))
     return model.wv
@@ -339,6 +399,12 @@ def convert_emojis(text):
         text = text.replace(emot, " ".join(UNICODE_EMO[emot].replace(",","").replace(":","").split()) + " ")
     return text
 
+def lemmatize_words(text):
+    lemmatizer = WordNetLemmatizer()
+    wordnet_map = {"N":wordnet.NOUN, "V":wordnet.VERB, "J":wordnet.ADJ, "R":wordnet.ADV} # Pos tag, used Noun, Verb, Adjective and Adverb
+    pos_tagged_text = nltk.pos_tag(text.split())
+    return " ".join([lemmatizer.lemmatize(word, wordnet_map.get(pos[0], wordnet.NOUN)) for word, pos in pos_tagged_text])
+    
 def write_convert_df_to_text_emojis(df, column, pathout):
     df[column] = df[column].apply(convert_emoticons)
     df[column] = df[column].apply(convert_emojis)
@@ -348,6 +414,8 @@ def clean_dict(df : DataFrame, column):
     print("Preprocessing data text - cleanining")
     d = df.duplicated(column, keep='first')
     print("removing duplicate sentences. Duplicates = {} senteces".format(len(df[d][column])))
+    #lowercase
+    df[column] = df[column].str.lower()
     #drop duplicates
     print("len before removing: {}".format(len(df[column])))
     df.drop_duplicates(subset=column, inplace=True, keep='first')
@@ -370,6 +438,7 @@ def clean_dict(df : DataFrame, column):
         
 
         #stemming?lemming?
+        sentence = lemmatize_words(sentence)
         #spelling correction? textblob or pyspellchecker - problem: slang and not english words will be transformed in other words.
 
         df.at[i, column] = sentence
@@ -386,11 +455,11 @@ def main():
     data = df["text"].fillna("NAN_sentence").values
     labels = df["label"].values
     print("total labels")
-    labels_n, __ = print_info_labels(labels)
+    labels_n, __ = get_info_labels(labels)
     #set the embedding, otherwise is None - so wv are created randomly
     
-    #training, accuracies_training , accuracies_testing = run_single_model(data, labels, word2vec=True, pre_embedding=False)
-    history, accuracies_training, accuracies_testing  = run_kfold(5, data, labels, word2vec=True, pre_embedding=True)
+    training, accuracies_training , accuracies_testing = run_single_model(data, labels, word2vec=True, pre_embedding=False, downsample=True)
+    #history, accuracies_training, accuracies_testing  = run_kfold(5, data, labels, word2vec=True, pre_embedding=False)
     
     print("Training")
     print(accuracies_training)
