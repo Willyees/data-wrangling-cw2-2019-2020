@@ -58,8 +58,12 @@ def set_up_model(vocab_size, input_length, embedding=np.zeros((1,0))):
     else:
         print("Embedding layer with random intiialized word vectors")
         model.add(layers.Embedding(vocab_size,embedding_length , input_length=input_length, trainable=False))
-    model.add(layers.Conv1D(filter_n, filter_heigth, strides=strides, padding='valid', activation='relu'))
-    model.add(layers.GlobalMaxPool1D())
+    model.add(layers.Conv1D(filter_n, filter_heigth, strides=strides, padding='valid', activation='relu')) #check kernel _size
+    #model.add(layers.Dropout(0.2))
+    #model.add(layers.GlobalMaxPool1D())
+    model.add(layers.GlobalAvgPool1D())
+    # We add a vanilla hidden layer:
+    #model.add(Dense(hidden_dims))
     model.add(layers.Dropout(0.5))
     #model.add(layers.Dense(10, activation='relu'))#sigmoid for multicalss, softmax for single classes
     model.add(layers.Dense(3, activation='softmax'))#sigmoid for multicalss, softmax for single classes
@@ -426,7 +430,8 @@ def clean_dict(df : DataFrame, column):
         #remove http url
         sentence = re.sub(r'\w+:\/{2}[\d\w-]+(\.[\d\w-]+)*(?:(?:\/[^\s/]*))*', '', sentence)
         #handle emojis before html
-        
+        sentence = convert_emojis(sentence)
+        sentence = convert_emoticons(sentence)
         #remove html
         soup = BeautifulSoup(sentence, "html.parser")
         sentence = soup.get_text()
@@ -437,7 +442,7 @@ def clean_dict(df : DataFrame, column):
         sentence = sentence.translate(str.maketrans('', '', string.punctuation))
         
 
-        #stemming?lemming?
+        #stemming?lemmatize?
         sentence = lemmatize_words(sentence)
         #spelling correction? textblob or pyspellchecker - problem: slang and not english words will be transformed in other words.
 
@@ -449,7 +454,7 @@ def clean_dict(df : DataFrame, column):
 
 
 def main():
-    file_path = ".\\datasets\\full_noemojis_spacesbetween.csv"#"E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\train_no_dup.csv"
+    file_path = ".\\datasets\\full_clean_noemojis_spacesbetween.csv"#"E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\train_no_dup.csv"
     df = pd.read_csv(file_path, names=["id", "text", "label"], sep=",")
     #df = clean_dict(df, "text")
     data = df["text"].fillna("NAN_sentence").values
@@ -458,7 +463,7 @@ def main():
     labels_n, __ = get_info_labels(labels)
     #set the embedding, otherwise is None - so wv are created randomly
     
-    training, accuracies_training , accuracies_testing = run_single_model(data, labels, word2vec=True, pre_embedding=False, downsample=True)
+    training, accuracies_training , accuracies_testing = run_single_model(data, labels, word2vec=True, pre_embedding=False, downsample=False)
     #history, accuracies_training, accuracies_testing  = run_kfold(5, data, labels, word2vec=True, pre_embedding=False)
     
     print("Training")
