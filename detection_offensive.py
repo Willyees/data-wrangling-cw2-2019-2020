@@ -9,7 +9,6 @@ from keras.preprocessing.text import Tokenizer
 from keras import Sequential
 from keras import layers
 from keras import utils
-#from keras.wrappers.scikit_learn import KerasClassifier
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score 
@@ -34,19 +33,6 @@ import nltk
 from nltk.stem.wordnet import WordNetLemmatizer
 from nltk.corpus.reader import wordnet
 
-def sample_file_percentage(pathin, directory, percentage):
-    """ Description:
-    Returns a random sample of length file path * percentage % without replacement by opening the file in the path
-    """
-    df = pd.read_csv(pathin, names=["id", "text", "label"], sep=",");
-    
-    elements_n = int(len(df.values) * percentage / 100)
-
-    dff =  pd.DataFrame(df.values)
-    sampled = dff.sample(n=elements_n, replace=False)
-    print(len(sampled))
-    #write to file - still have to clean manually the columns names!
-    sampled.to_csv(directory + "sampled" + str(percentage) + ".csv", index=False, index_label=False)
 
 
 def set_up_model(vocab_size, input_length, embedding=np.zeros((1,0))):
@@ -58,12 +44,8 @@ def set_up_model(vocab_size, input_length, embedding=np.zeros((1,0))):
     else:
         print("Embedding layer with random intiialized word vectors")
         model.add(layers.Embedding(vocab_size,embedding_length , input_length=input_length, trainable=False))
-    model.add(layers.Conv1D(filter_n, filter_heigth, strides=strides, padding='valid', activation='relu')) #check kernel _size
-    #model.add(layers.Dropout(0.2))
-    #model.add(layers.GlobalMaxPool1D())
-    model.add(layers.GlobalAvgPool1D())
-    # We add a vanilla hidden layer:
-    #model.add(Dense(hidden_dims))
+    model.add(layers.Conv1D(filter_n, filter_heigth, strides=strides, padding='valid', activation='elu'))
+    model.add(layers.GlobalMaxPooling1D())
     model.add(layers.Dropout(0.5))
     #model.add(layers.Dense(10, activation='relu'))#sigmoid for multicalss, softmax for single classes
     model.add(layers.Dense(3, activation='softmax'))#sigmoid for multicalss, softmax for single classes
@@ -81,8 +63,6 @@ def get_info_labels(labels, axis=None):
         print(classes_c[i])
     return classes_c, classes 
 
-def train_model():
-    pass
 
 def calculate_confusion_matrix(correct_labels, prediction_labels, correct1hot=True, prediction1hot=False, names=None):
     """Description: print to screen confusion matrix of predicted labels compared to correct ones. Correct labels can be 1hotencoded """
@@ -99,8 +79,6 @@ def calculate_confusion_matrix(correct_labels, prediction_labels, correct1hot=Tr
     print("Accuracy score: ", accuracy_score(correct_labels, prediction_labels))
     print("Report")
     print(classification_report(correct_labels, prediction_labels))
-
-
 
 
 def run_kfold(splits, data, labels, word2vec=True, pre_embedding=False):
@@ -178,16 +156,17 @@ path_full_no_emojis = ".\\datasets\\full_noemojis.csv"
 
 #hyperparameters
 max_len = 100 #number of words per sentences. If sentence has less, then added wv empty <0,0,0>
-embedding_length = 50 #describe how many elements a word vector will have
+embedding_length = 300 #describe how many elements a word vector will have
 filter_n = 100
-filter_heigth = 10
+filter_heigth = 3
 strides = 1
 batch_size = 32
 epochs = 10
 #
 #path_model_wc = 'E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\models\\init_50.wv' #model to be used to load a pretrained wc
 #path_model_wc = 'C:\\Users\\Alessio\\gensim-data\\glove-twitter-25\\glove-twitter-25.gz'
-path_model_wc = 'C:\\Users\\Alessio\\gensim-data\\glove-wiki-gigaword-50\\glove-wiki-gigaword-50.gz'
+#path_model_wc = 'C:\\Users\\Alessio\\gensim-data\\glove-wiki-gigaword-50\\glove-wiki-gigaword-50.gz'
+path_model_wc = 'E:\\Users\\User\\Documents\\SCHOOL\\5thYear\\data_wrangling\\cw-partB\\models\\cleaned_noemoj.wv'
 
 def word2vec_embedding(vocab_size, word_index, pre_embedding=False, data_embedding=np.zeros((1,0))):
     """data_embedding: optional, only needed if pre_embedding is not used. pre_embedding states that a preembedding generated model will be loaded from 
@@ -205,7 +184,6 @@ def word2vec_embedding(vocab_size, word_index, pre_embedding=False, data_embeddi
         print("Loading preembedded word vector from {}".format(path_model_wc))
         word_vectors = KeyedVectors.load_word2vec_format(path_model_wc, binary=False)
     embedding_matrix = np.zeros((vocab_size, embedding_length))
-
     c_not_present = 0
     for word, position in word_index.items():
         #vocab_size is the total number of the whole available words
@@ -228,7 +206,7 @@ def run_model(data_train, data_test, label_train, label_test, word2vec=True, pre
     get_info_labels(label_train,0)
     print("Testing labels")
     get_info_labels(label_test,0)
-    tokenizer = Tokenizer(num_words=5000, lower=False, filters=[])
+    tokenizer = Tokenizer(lower=False, filters=[])
     tokenizer.fit_on_texts(data_train)
     #debug
     c = 0
@@ -248,7 +226,7 @@ def run_model(data_train, data_test, label_train, label_test, word2vec=True, pre
     print(data_train[0])
     print(x_train[0])
 
-    data_train_seq = sequence.pad_sequences(x_train, maxlen=max_len) #no maxlen at the moment
+    data_train_seq = sequence.pad_sequences(x_train, maxlen=max_len)
     data_test_seq = sequence.pad_sequences(x_test, maxlen=max_len)
 
     print(data_train_seq[0])
@@ -260,6 +238,8 @@ def run_model(data_train, data_test, label_train, label_test, word2vec=True, pre
     #check if user prefers that embedded model is loaded with a calculated matrix weights
     if(word2vec):
         embedding_matrix = word2vec_embedding(vocab_size, tokenizer.word_index, pre_embedding, np.concatenate((data_train,data_test)))
+        #embedding_matrix[0] = np.array([1] * embedding_length)
+
     model = set_up_model(vocab_size, data_train_seq.shape[1], embedding_matrix)
     training = model.fit(data_train_seq, label_train, batch_size=batch_size, epochs=epochs, validation_data=(data_test_seq, label_test))
 
@@ -334,7 +314,7 @@ def downsample_frequent_labels(data, labels):
     #         #pop element from either labels and from the data array
     #         data.pop(l_indexes[random_position])
     #         labels.pop(l_indexes[random_position])
-    #         #have to pop also from the l_indexes to reflect changes in the main arrays
+    #         #have to pop also from the l_indexes to reflect changes in the  arrays
     #         l_indexes.pop(random_position)
     # get_info_labels(output_labels, 0)
     # return output_data, output_labels
@@ -384,7 +364,7 @@ def get_max_length_sentences(file_path, n_elements):
 
 def get_word2vec_embedding(data):
     sentences_words = list(text_to_word_sequence(x, filters=[], lower=False) for x in data)
-    model = Word2Vec(sentences_words, size=embedding_length, workers=4, min_count=1, sg=1, hs=1, iter=5)
+    model = Word2Vec(sentences_words, size=embedding_length, workers=4, min_count=1 , sg=1, hs=1, iter=5)
     
     print("Number of word vectors: {}".format(len(model.wv.vocab)))
     return model.wv
@@ -416,11 +396,11 @@ def write_convert_df_to_text_emojis(df, column, pathout):
 
 def clean_dict(df : DataFrame, column):
     print("Preprocessing data text - cleanining")
+    #drop duplicates
     d = df.duplicated(column, keep='first')
     print("removing duplicate sentences. Duplicates = {} senteces".format(len(df[d][column])))
     #lowercase
     df[column] = df[column].str.lower()
-    #drop duplicates
     print("len before removing: {}".format(len(df[column])))
     df.drop_duplicates(subset=column, inplace=True, keep='first')
     print("len after removing: {}".format(len(df[column])))
@@ -450,6 +430,20 @@ def clean_dict(df : DataFrame, column):
     print(df[column].head())
     return df
 
+def sample_file_percentage(pathin, directory, percentage):
+    """ Description:
+    Returns a random sample of length file path * percentage % without replacement by opening the file in the path
+    """
+    df = pd.read_csv(pathin, names=["id", "text", "label"], sep=",");
+    
+    elements_n = int(len(df.values) * percentage / 100)
+
+    dff =  pd.DataFrame(df.values)
+    sampled = dff.sample(n=elements_n, replace=False)
+    print(len(sampled))
+    #write to file - still have to clean manually the columns names!
+    sampled.to_csv(directory + "sampled" + str(percentage) + ".csv", index=False, index_label=False)
+
 ##end helper functions
 
 
@@ -464,7 +458,7 @@ def main():
     #set the embedding, otherwise is None - so wv are created randomly
     
     training, accuracies_training , accuracies_testing = run_single_model(data, labels, word2vec=True, pre_embedding=False, downsample=False)
-    #history, accuracies_training, accuracies_testing  = run_kfold(5, data, labels, word2vec=True, pre_embedding=False)
+    #history, accuracies_training, accuracies_testing  = run_kfold(5, data, labels, word2vec=True, pre_embedding=True)
     
     print("Training")
     print(accuracies_training)
@@ -473,7 +467,7 @@ def main():
 
     #print hyperparameters used
     print("max_len: {}, embedding_length : {}, filter_n : {}, filter_high : {}, strides : {}, batch_size : {}, epochs : {}".format(max_len, embedding_length, filter_n, filter_heigth, strides, batch_size, epochs))
-    plt.style.use('ggplot')
+    # plt.style.use('ggplot')
     # for training in history:
     #     plot_history(training)
 
