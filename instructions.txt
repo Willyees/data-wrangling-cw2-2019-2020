@@ -1,0 +1,13 @@
+python script is ready to go, but need some arguments in the code.
+pre-processing dataset is done in the function clean_dict. It is already called in the main()
+
+What is needed to be done:
+set the "file_path" in the main to the path of the dataset file in your hard drive
+
+What can you do:
+1)run random initialized word embedding model by setting word2vec param false
+2)run word2vec embedded model using the dataset by setting word2vec param true and pre_embedding false
+3)run pre-embedded model by setting word2vec true and pre_embedding true and global variable path_model_wc to the path of the downloaded preembedded (you have to have it on your hard drive)
+4)downsampling by using the run_single_model(downsample=true)
+
+All the parameter settings have to be done on the source code.
